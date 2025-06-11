@@ -10,9 +10,6 @@ WORKDIR /tmp/ors
 COPY ors-api/pom.xml /tmp/ors/ors-api/pom.xml
 COPY ors-engine/pom.xml /tmp/ors/ors-engine/pom.xml
 COPY pom.xml /tmp/ors/pom.xml
-COPY ors-report-aggregation/pom.xml /tmp/ors/ors-report-aggregation/pom.xml
-COPY ors-test-scenarios/pom.xml /tmp/ors/ors-test-scenarios/pom.xml
-COPY ors-benchmark/pom.xml /tmp/ors/ors-benchmark/pom.xml
 COPY mvnw /tmp/ors/mvnw
 COPY .mvn /tmp/ors/.mvn
 
@@ -31,47 +28,54 @@ FROM docker.io/golang:1.24.2-alpine3.21 AS build-go
 RUN GO111MODULE=on go install github.com/mikefarah/yq/v4@v4.45.1
 
 # build final image, just copying stuff inside
-FROM docker.io/amazoncorretto:21.0.6-alpine3.21 AS publish
+FROM ubuntu:22.04 AS publish
 
 # Build ARGS
 ARG UID=1000
 ARG GID=1000
-ARG OSM_FILE=./ors-api/src/test/files/heidelberg.test.pbf
-ARG ORS_HOME=/home/ors
+ARG ORS_HOME=/efs/ors-run
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Set the default language
-ENV LANG='en_US' LANGUAGE='en_US' LC_ALL='en_US'
+ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8'
 
 # Setup the target system with the right user and folders.
-RUN apk update && apk add --no-cache bash=~5 jq=~1 openssl=~3 && \
-    addgroup ors -g ${GID} && \
-    mkdir -p ${ORS_HOME}/logs ${ORS_HOME}/files ${ORS_HOME}/graphs ${ORS_HOME}/elevation_cache  && \
-    adduser -D -h ${ORS_HOME} -u ${UID} --system -G ors ors  && \
-    chown ors:ors ${ORS_HOME} \
-    # Give all permissions to the user
-    && chmod -R 777 ${ORS_HOME}
+RUN apt-get update && apt-get install -y \
+    bash \
+    jq \
+    cron \
+    openssl \
+    wget \
+    osmium-tool \
+    openjdk-21-jre-headless \
+    util-linux \
+    && rm -rf /var/lib/apt/lists/* && \
+    # Create group and user
+    groupadd -g ${GID} ors && \
+    mkdir -p ${ORS_HOME}/logs ${ORS_HOME}/files ${ORS_HOME}/graphs ${ORS_HOME}/elevation_cache && \
+    useradd -d ${ORS_HOME} -u ${UID} -g ors -s /bin/bash ors && \
+    chown ors:ors ${ORS_HOME} && \
+    chmod -R 777 ${ORS_HOME}
+
 
 # Copy over the needed bits and pieces from the other stages.
 COPY --chown=ors:ors --from=build /tmp/ors/ors-api/target/ors.jar /ors.jar
-COPY --chown=ors:ors ./$OSM_FILE /heidelberg.test.pbf
-COPY --chown=ors:ors ./docker-entrypoint.sh /entrypoint.sh
+COPY --chown=ors:ors ./entrypoint.sh /entrypoint.sh
+COPY --chown=ors:ors ./downloader.sh /downloader.sh
+COPY --chown=ors:ors ./utils.sh /utils.sh
 COPY --chown=ors:ors --from=build-go /go/bin/yq /bin/yq
+COPY --chown=ors:ors ./ors-config.yml /ors-config.yml
+COPY --chown=ors:ors ./polygon/polygon_fr_esp.geojson /polygon_fr_esp.geojson
+COPY --chown=ors:ors ./updater.sh /updater.sh
 
-# Copy the example config files to the build folder
-COPY --chown=ors:ors ./ors-config.yml /example-ors-config.yml
-COPY --chown=ors:ors ./ors-config.env /example-ors-config.env
-
-# Rewrite the example config to use the right files in the container
-RUN yq -i -p=props -o=props \
-    '.ors.engine.profile_default.build.source_file="/home/ors/files/example-heidelberg.test.pbf"' \
-    /example-ors-config.env && \
-    yq -i e '.ors.engine.profile_default.build.source_file = "/home/ors/files/example-heidelberg.test.pbf"' \
-    /example-ors-config.yml
-
-ENV BUILD_GRAPHS="False"
-ENV REBUILD_GRAPHS="False"
 # Set the ARG to an ENV. Else it will be lost.
 ENV ORS_HOME=${ORS_HOME}
+#Set default environment variables
+ENV OSM_DATA_DIR=/efs/osm 
+ENV OSM_FILE=${OSM_DATA_DIR}/europe-latest.osm.pbf
+ENV OSM_IK_FILE=${OSM_DATA_DIR}/data_IK.osm.pbf
+ENV BUILD_GRAPHS="False"
+ENV REBUILD_GRAPHS="False"
 
 WORKDIR ${ORS_HOME}
 
