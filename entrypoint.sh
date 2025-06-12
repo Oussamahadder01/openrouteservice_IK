@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash +ex
 
 # Source the original entrypoint functions
 source /utils.sh
@@ -54,6 +54,7 @@ if [ ! -f "${jar_file}" ]; then
   critical "Jar file not found. This shouldn't happen. Exiting."
 fi
 
+update_file "${ORS_HOME}/config/ors-config.yml" "/ors-config.yml"
 ors_engine_profile_default_graph_path=$(extract_config_info "${ors_config_location}" '.ors.engine.profile_default.graph_path')
 ors_engine_profile_default_build_source_file=$(extract_config_info "${ors_config_location}" '.ors.engine.profile_default.build.source_file')
 
@@ -131,7 +132,15 @@ JAVA_OPTS="-Djava.awt.headless=true \
 ${additional_java_opts}"
 debug "JAVA_OPTS: ${JAVA_OPTS}"
 success "CATALINA_OPTS and JAVA_OPTS ready. For details set CONTAINER_LOG_LEVEL=DEBUG."
-setup_cronjob
+info "Setting up graph update cronjob"
+    
+# Create cron job (runs every Sunday at 2 AM)
+CRON_SCHEDULE="${GRAPH_UPDATE_CRON:-* * * * *}"
+echo "${CRON_SCHEDULE} /updater.sh >> /var/log/updater.log 2>&1" | crontab -
+
+# Start cron daemon
+cron
+success "Cronjob configured to run: ${CRON_SCHEDULE}"
 
 echo "#####################"
 echo "# ORS startup phase #"

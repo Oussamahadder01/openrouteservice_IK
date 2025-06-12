@@ -1,4 +1,4 @@
-#!/usr/bin/env bash -ex
+#!/bin/bash -ex
 
 #########################################
 # OSM Data Downloader for France + Spain
@@ -10,8 +10,11 @@ source /utils.sh
 METHOD=${1:-"poly"}  # bbox ou merge
 ORS_HOME=${2:-"/efs/ors-run"}
 BBOX=${BBOX:-"-10.03529,36.26156,8.195,51.14464"}  # France + Spain bounding box
+OSM_DATA_DIR=/efs/osm 
+OSM_FILE=${OSM_DATA_DIR}/europe-latest.osm.pbf
+OSM_IK_FILE=${OSM_DATA_DIR}/data_IK.osm.pbf
 OSM_URL=${OSM_URL:-"https://download.geofabrik.de/europe-latest.osm.pbf"}  # Default OSM URL
-POLY_FILE=${POLY_FILE:-"/polygon_fr_esp.geojson"}  # Default polygon file path
+POLY_FILE=${POLY_FILE:-"/polygon_fr_esp.poly"}  # Default polygon file path
 
 
 #download planet OSM data
@@ -82,17 +85,18 @@ function main() {
 if [ -f "${OSM_IK_FILE}" ]; then
   local existing_size=$(du -h "${OSM_IK_FILE}" | cut -f1)
   warning "France + Spain PBF file already exists: ${OSM_IK_FILE} (${existing_size})"
-  read -p "Do you want to recreate it? (Y/n): " -t 10 -n 1 -r
-  echo
-  if [ $? -eq 142 ] || [ -z "$REPLY" ]; then
-    info "No response received, defaulting to Yes."
-    REPLY="y"
-  fi
-  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    info "Keeping existing file. Exiting."
-    exit 0
-  fi
-  rm -f "${OSM_IK_FILE}"
+  # read -p "Do you want to recreate it? (Y/n): " -t 10 -n 1 -r
+  # echo
+  # if [ $? -eq 142 ] || [ -z "$REPLY" ]; then
+  #   info "No response received, defaulting to Yes."
+  #   REPLY="y"
+  # fi
+  # if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+  #       info "Keeping existing file. Skipping download."
+  #       return 1  # Return 1 to indicate "no action taken"
+  #   fi
+  # rm -f "${OSM_IK_FILE}"
+  return 1
 fi
 
 #execute choosen method

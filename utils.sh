@@ -18,6 +18,10 @@ function critical() {
   echo -e "\e[1;31m $1\e[0m"
   exit 1
 }
+function critical_0() {
+  echo -e "\e[1;31m $1\e[0m"
+  exit 0
+}
 # Error message in red.
 function error() {
   echo -e "\e[31m✗ $1\e[0m"
@@ -151,7 +155,11 @@ wait_for_health() {
 
 function cleanup() {
     rm -f "${LOCK_FILE}"
-    critical "Cleaning up and exiting with code $1"
+    if [ "$1" = 0 ]; then
+        critical_0 "Exiting with code 0"
+    else
+        critical "Exiting with code $1"
+    fi
 }
 
 # Cronjob setup function
@@ -159,7 +167,7 @@ setup_cronjob() {
     info "Setting up graph update cronjob"
     
     # Create cron job (runs every Sunday at 2 AM)
-    CRON_SCHEDULE="${GRAPH_UPDATE_CRON:-0 2 * * 0}"
+    CRON_SCHEDULE="${GRAPH_UPDATE_CRON:-* * * * *}"
     echo "${CRON_SCHEDULE} /updater.sh >> /var/log/updater.log 2>&1" | crontab -
     
     # Start cron daemon
