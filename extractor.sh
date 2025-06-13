@@ -6,6 +6,11 @@
 # METHOD: bbox | poly (default: poly)
 #########################################
 source /utils.sh
+export OSM_DATA_DIR="/efs/data"
+export OSM_URL=https://download.geofabrik.de/europe-latest.osm.pbf
+export LOGS_DIR="/efs/logs/ors_ik"
+
+OSM_FILE=$(find_osm_file)
 
 # Configuration
 METHOD=${1:-"poly"}  # bbox or poly
@@ -23,9 +28,9 @@ get_file_timestamp() {
 
 #retrieve timestamp for log file (DDMMYYYY format)
 TIMESTAMP=$(get_file_timestamp "${TARGET_FILE}")
-EXTRACTOR_LOG="${LOG_DIR}/extractor-ors_${TIMESTAMP}.log"
+EXTRACTOR_LOG="${LOGS_DIR}/extractor-ors_${TIMESTAMP}.log"
 
-mkdir -p "${LOG_DIR}"
+mkdir -p "${LOGS_DIR}"
 
 #redirect all output to log file
 exec 1> >(tee -a "${EXTRACTOR_LOG}")

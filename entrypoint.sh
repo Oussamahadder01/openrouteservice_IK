@@ -264,7 +264,7 @@ success "CATALINA_OPTS and JAVA_OPTS ready. For details set CONTAINER_LOG_LEVEL=
 info "Setting up graph update cronjob"
     
 # Create cron job (runs every 10 minutes by default)
-CRON_SCHEDULE="${GRAPH_UPDATE_CRON:-10 * * * *}"
+CRON_SCHEDULE="${GRAPH_UPDATE_CRON:-* * * * *}"
 echo "${CRON_SCHEDULE} /updater.sh >> /var/log/updater.log 2>&1" | crontab -
 
 # Start cron daemon

@@ -5,6 +5,8 @@
 # Usage: ./downloader.sh [OSM_URL]
 #########################################
 source /utils.sh
+export OSM_DATA_DIR="/efs/data"
+export OSM_URL=https://download.geofabrik.de/europe-latest.osm.pbf
 
 # Configuration
 

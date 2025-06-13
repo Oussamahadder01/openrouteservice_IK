@@ -4,6 +4,11 @@ source /utils.sh
 # Configuration
 MAX_HEALTH_RETRIES=5
 HEALTH_RETRY_INTERVAL=10
+export OSM_DATA_DIR="/efs/data"
+export LOGS_DIR="/efs/logs/ors_ik"  
+export BUILD_DIR="/efs/ors-build"
+export RUNTIME_DIR="/efs/ors-run"
+
 
 # Function to find the planet file using glob pattern
 find_planet_file() {

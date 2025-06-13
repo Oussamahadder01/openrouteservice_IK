@@ -180,4 +180,36 @@ setup_cronjob() {
     success "Cronjob configured to run: ${CRON_SCHEDULE}"
 }
 
+find_osm_file() {
+    local pattern="${OSM_DATA_DIR}/planet_*.osm.pbf"
+    local files=( $pattern )  # This expands the glob
+    
+    if [ ${#files[@]} -eq 0 ] || [ ! -f "${files[0]}" ]; then
+        echo ""
+        return 1
+    elif [ ${#files[@]} -gt 1 ]; then
+        warning "Multiple planet files found, using the most recent one"
+        # Sort by modification time and get the newest
+        local newest=$(ls -t $pattern 2>/dev/null | head -n1)
+        echo "$newest"
+    else
+        echo "${files[0]}"
+    fi
+}
+find_extract_file() {
+    local pattern="${OSM_DATA_DIR}/data_ik_*.osm.pbf"
+    local files=( $pattern )  # This expands the glob
+    
+    if [ ${#files[@]} -eq 0 ] || [ ! -f "${files[0]}" ]; then
+        echo ""
+        return 1
+    elif [ ${#files[@]} -gt 1 ]; then
+        warning "Multiple planet files found, using the most recent one"
+        # Sort by modification time and get the newest
+        local newest=$(ls -t $pattern 2>/dev/null | head -n1)
+        echo "$newest"
+    else
+        echo "${files[0]}"
+    fi
+}
 set_log_level
