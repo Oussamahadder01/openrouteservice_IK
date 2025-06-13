@@ -3,9 +3,14 @@
 ########################
 # Set Helper functions #
 ########################
-# Log level functions
 CONTAINER_LOG_LEVEL=${CONTAINER_LOG_LEVEL:-"INFO"}
+#common environment variables, write it here to include it in the cron job
+OSM_DATA_DIR=/efs/data 
+LOG_DIR="/efs/logs/ors_ik"
 
+#extraction variables
+BBOX=${BBOX:-"-10.03529,36.26156,8.195,51.14464"}  # France + Spain bounding box
+POLY_FILE=${POLY_FILE:-"/polygon_fr_esp.poly"}  # Default polygon file path
 
 
 # Success message in green. Always printed

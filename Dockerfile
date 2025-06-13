@@ -33,8 +33,13 @@ FROM ubuntu:22.04 AS publish
 # Build ARGS
 ARG UID=1000
 ARG GID=1000
-ARG ORS_HOME=/efs/ors-run
 ARG DEBIAN_FRONTEND=noninteractive
+
+
+ARG RUNTIME_DIR=/efs/ors-run
+ARG BUILD_DIR=/efs/ors-build
+ARG LOGS_DIR=/efs/logs/ors_ik
+ARG OSM_DATA_DIR=/efs/data
 
 # Set the default language
 ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8'
@@ -52,11 +57,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* && \
     # Create group and user
     groupadd -g ${GID} ors && \
-    mkdir -p ${ORS_HOME}/logs ${ORS_HOME}/files ${ORS_HOME}/graphs ${ORS_HOME}/elevation_cache && \
-    useradd -d ${ORS_HOME} -u ${UID} -g ors -s /bin/bash ors && \
-    chown ors:ors ${ORS_HOME} && \
-    chmod -R 777 ${ORS_HOME}
-
+    mkdir -p ${RUNTIME_DIR}/graphs  && \
+    mkdir -p ${BUILD_DIR} && \
+    mkdir -p ${LOGS_DIR} && \
+    mkdir -p ${OSM_DATA_DIR} && \
+    useradd -d ${RUNTIME_DIR} -u ${UID} -g ors -s /bin/bash ors && \
+    chown ors:ors ${RUNTIME_DIR} && \
+    chmod -R 777 ${RUNTIME_DIR}
 
 # Copy over the needed bits and pieces from the other stages.
 COPY --chown=ors:ors --from=build /tmp/ors/ors-api/target/ors.jar /ors.jar
@@ -67,16 +74,20 @@ COPY --chown=ors:ors --from=build-go /go/bin/yq /bin/yq
 COPY --chown=ors:ors ./ors-config.yml /ors-config.yml
 COPY --chown=ors:ors ./polygon/polygon_fr_esp.geojson /polygon_fr_esp.geojson
 COPY --chown=ors:ors ./updater.sh /updater.sh
+COPY --chown=ors:ors ./extractor.sh /extractor.sh
 
-# Set the ARG to an ENV. Else it will be lost.
-ENV ORS_HOME=${ORS_HOME}
 #Set default environment variables
-ENV OSM_DATA_DIR=/efs/osm 
-ENV OSM_FILE=${OSM_DATA_DIR}/europe-latest.osm.pbf
-ENV OSM_IK_FILE=${OSM_DATA_DIR}/data_IK.osm.pbf
+ENV RUNTIME_DIR=${RUNTIME_DIR}
+ENV BUILD_DIR=${BUILD_DIR}
+ENV LOGS_DIR=${LOGS_DIR}
+ENV OSM_DATA_DIR=${OSM_DATA_DIR}
+ENV OSM_FILE=${OSM_DATA_DIR}/planet_*
+ENV OSM_URL=https://download.geofabrik.de/europe-latest.osm.pbf
+
+
 ENV REBUILD_GRAPHS="False"
 
-WORKDIR ${ORS_HOME}
+WORKDIR ${RUNTIME_DIR}
 
 # Healthcheck
 HEALTHCHECK --interval=3s --timeout=2s CMD ["sh", "-c", "wget --quiet --tries=1 --spider http://localhost:8082/ors/v2/health || exit 1"]

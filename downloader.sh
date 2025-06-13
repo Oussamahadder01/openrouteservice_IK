@@ -1,122 +1,94 @@
 #!/bin/bash -ex
 
 #########################################
-# OSM Data Downloader for France + Spain
-# Usage: ./downloader.sh [METHOD] [ORS_HOME]
-# METHOD: bbox | merge (default: merge)
+# OSM Planet Data Downloader
+# Usage: ./downloader.sh [OSM_URL]
 #########################################
 source /utils.sh
+
 # Configuration
-METHOD=${1:-"poly"}  # bbox ou merge
-ORS_HOME=${2:-"/efs/ors-run"}
-BBOX=${BBOX:-"-10.03529,36.26156,8.195,51.14464"}  # France + Spain bounding box
-OSM_DATA_DIR=/efs/osm 
-OSM_FILE=${OSM_DATA_DIR}/europe-latest.osm.pbf
-OSM_IK_FILE=${OSM_DATA_DIR}/data_IK.osm.pbf
-OSM_URL=${OSM_URL:-"https://download.geofabrik.de/europe-latest.osm.pbf"}  # Default OSM URL
-POLY_FILE=${POLY_FILE:-"/polygon_fr_esp.poly"}  # Default polygon file path
 
+# Generate timestamp for log file (DDMMYYYY format)
+TIMESTAMP=$(date +"%d%m%Y")
+LOG_DIR="/efs/logs/ors_ik"
+DOWNLOAD_LOG="${LOG_DIR}/downloader-ors_${TIMESTAMP}.log"
+OSM_FILE="${OSM_DATA_DIR}/planet_${TIMESTAMP}.osm.pbf"
 
-#download planet OSM data
-if [ ! -f "${OSM_FILE}" ]; then
-info "Downloading planet OSM data from ${OSM_URL}"
-info "This may take 30-60 minutes depending on your connection..."
-wget --progress=bar:force:noscroll -O "${OSM_FILE}" "${OSM_URL}" || critical "Failed to download planet PBF file"
-success "Downloaded planet PBF file ($(du -h "${OSM_FILE}" | cut -f1))"
-else
-info "planet PBF file already exists, using cached version"
-fi
+# Create log directory if it doesn't exist
+mkdir -p "${LOG_DIR}"
+mkdir -p "${OSM_DATA_DIR}"
 
-#function to extract IK zone data including France and Spain using bounding box, bounding box can be retrieved using openstreetmap tools.
-function download_with_bbox() {
-  info "Using BBOX method: downloading planet and extracting France + Spain"
-  warning "This method downloads ~30GB temporarily!"
-  info "Extracting France + Spain using bbox: ${BBOX}"
-  info "This process may take 10-30 minutes..."
-  info "current directory: $(pwd)"
-  local start_time=$(date +%s)
+# Redirect all output to log file
+exec 1> >(tee -a "${DOWNLOAD_LOG}")
+exec 2> >(tee -a "${DOWNLOAD_LOG}" >&2)
+
+function cleanup_old_files() {
+  info "Cleaning up old planet OSM files..."
   
-  osmium extract -b ${BBOX} ${OSM_FILE} -O ${OSM_IK_FILE} || critical "Failed to extract France + Spain from planet PBF file"
-  #calculate download time
-  local end_time=$(date +%s)
-  local elapsed=$((end_time - start_time))
-  local elapsed_formatted=$(printf '%02d:%02d:%02d' $((elapsed/3600)) $((elapsed%3600/60)) $((elapsed%60)))
+  # Find all planet_*.osm.pbf files except the current one
+  local old_files=$(find "${OSM_DATA_DIR}" -name "planet_*.osm.pbf" -not -name "$(basename ${OSM_FILE})" -type f)
   
-  success "Successfully extracted France + Spain to ${OSM_IK_FILE} ($(du -h "${OSM_IK_FILE}" | cut -f1)) in ${elapsed_formatted}"
-  if [ -f "${OSM_IK_FILE}" ]; then
-    local final_size=$(du -h "${OSM_IK_FILE}" | cut -f1)
-    success "Final France + Spain file size: ${final_size}"
+  if [ -n "$old_files" ]; then
+    echo "$old_files" | while read -r file; do
+      if [ -f "$file" ]; then
+        local file_size=$(du -h "$file" | cut -f1)
+        info "Removing old file: $file (${file_size})"
+        rm -f "$file" || warning "Failed to remove: $file"
+      fi
+    done
+    success "Cleanup completed"
+  else
+    info "No old planet files found to clean up"
   fi
 }
 
-#function to extract IK zone data from provided polygon, polygon file can be downloaded from overpass turbo or other sources.
-function download_with_polygon() {
-    info "Using Polygon method: downloading France + Spain with polygon"
-    warning "This method downloads ~6GB temporarily!"
+function download_planet() {
+  echo "========================================="
+  echo "🌍 OSM Planet Data Downloader"
+  echo "========================================="
+  echo "Started at: $(date)"
+  echo "Source URL: ${OSM_URL}"
+  echo "Target: ${OSM_FILE}"
+  echo "Log file: ${DOWNLOAD_LOG}"
+  echo "========================================="
+
+  # Create OSM data directory if it doesn't exist
+
+  # Download planet OSM data
+  if [ ! -f "${OSM_FILE}" ]; then
+    info "Downloading planet OSM data from ${OSM_URL}"
+    info "This may take 30-60 minutes depending on your connection..."
+    
     local start_time=$(date +%s)
-    if [ ! -f "${OSM_IK_FILE}" ] && [ -f "${POLY_FILE}" ]; then
-        info "Downloading France + Spain OSM data from ${OSM_URL}"
-        info "This may take 10-30 minutes depending on your connection..."
-        osmium extract -p ${POLY_FILE} ${OSM_FILE} -O -o ${OSM_IK_FILE} || critical "Failed to download France + Spain PBF file using polygon"
-        #calculate download time
-        local end_time=$(date +%s)
-        local elapsed=$((end_time - start_time))
-        local elapsed_formatted=$(printf '%02d:%02d:%02d' $((elapsed/3600)) $((elapsed%3600/60)) $((elapsed%60)))
-        success "Successfully extracted France + Spain to ${OSM_IK_FILE} ($(du -h "${OSM_IK_FILE}" | cut -f1)) in ${elapsed_formatted}"
+    
+    # Download to a temporary file first
+    local temp_file="${OSM_FILE}.tmp"
+    if wget --progress=bar:force:noscroll -O "${temp_file}" "${OSM_URL}"; then
+      # Move the temp file to final location only if download succeeded
+      mv "${temp_file}" "${OSM_FILE}"
+      
+      local end_time=$(date +%s)
+      local elapsed=$((end_time - start_time))
+      local elapsed_formatted=$(printf '%02d:%02d:%02d' $((elapsed/3600)) $((elapsed%3600/60)) $((elapsed%60)))
+      
+      success "Downloaded planet PBF file ($(du -h "${OSM_FILE}" | cut -f1)) in ${elapsed_formatted}"
+      
+      # Cleanup old files after successful download
+      cleanup_old_files
     else
-        if [ ! -f "${POLY_FILE}" ]; then
-            critical "Polygon file not found: ${POLY_FILE}"
-        else
-            critical "France + Spain PBF file already exists, using cached version"
-        fi
+      # Remove temp file if download failed
+      rm -f "${temp_file}"
+      critical "Failed to download planet PBF file"
     fi
+  else
+    local existing_size=$(du -h "${OSM_FILE}" | cut -f1)
+    info "Planet PBF file already exists: ${OSM_FILE} (${existing_size})"
+    info "Skipping download"
+  fi
+
+  success "Planet download process completed at: $(date)"
+  success "Log saved to: ${DOWNLOAD_LOG}"
 }
 
-
-function main() {
-  echo "========================================="
-  echo "🗺️  OSM Data Downloader for France + Spain"
-  echo "========================================="
-  echo "Method: ${METHOD}"
-  echo "Target: ${OSM_DATA_DIR}/data_IK.osm.pbf"
-  echo "========================================="
-
-#verify if extracted osm file (spain + france) already exists
-if [ -f "${OSM_IK_FILE}" ]; then
-  local existing_size=$(du -h "${OSM_IK_FILE}" | cut -f1)
-  warning "France + Spain PBF file already exists: ${OSM_IK_FILE} (${existing_size})"
-  # read -p "Do you want to recreate it? (Y/n): " -t 10 -n 1 -r
-  # echo
-  # if [ $? -eq 142 ] || [ -z "$REPLY" ]; then
-  #   info "No response received, defaulting to Yes."
-  #   REPLY="y"
-  # fi
-  # if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-  #       info "Keeping existing file. Skipping download."
-  #       return 1  # Return 1 to indicate "no action taken"
-  #   fi
-  # rm -f "${OSM_IK_FILE}"
-  return 1
-fi
-
-#execute choosen method
-  case ${METHOD} in
-    "bbox")
-      download_with_bbox
-      ;;
-    "poly")
-      download_with_polygon
-      ;;
-    *)
-      error "Unknown method: ${METHOD}"
-      echo "Usage: $0 [bbox|poly] [ORS_HOME]"
-      echo "  bbox:  Download planet and extract with bounding box"
-      echo "  poly: Download planet and extract with polygon)"
-      exit 1
-      ;;
-  esac
-
-  success "OSM data processing completed successfully!"
-}
-# Run the main function
-main "$@"
+# Run the download function
+download_planet "$@"

@@ -19,8 +19,10 @@ ors:
         preparation:
           methods:
             ch:
+              weightings: shortest
               enabled: false                
             lm:
+              weightings: shortest
               enabled: false                
             core:
               enabled: true                 
@@ -45,8 +47,10 @@ ors:
           preparation:
             methods:
               ch:
+                weightings: shortest
                 enabled: false              
               lm:
+                weightings: shortest
                 enabled: false              
               core:
                 enabled: true               
