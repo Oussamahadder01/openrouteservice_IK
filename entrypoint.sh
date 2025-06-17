@@ -4,49 +4,9 @@ source /utils.sh
 # Generate timestamp for init log (DDMMYYYY format)
 INIT_TIMESTAMP=$(date +"%d%m%Y")
 INIT_LOG="${LOGS_DIR}/init-ors_${INIT_TIMESTAMP}.log"
+export BUILD_DIR="/efs/ors-build"
 
-# Function to find the planet file using glob pattern
-find_osm_file() {
-    local pattern="${OSM_DATA_DIR}/planet_*.osm.pbf"
-    local files=( $pattern )  # This expands the glob
-    
-    if [ ${#files[@]} -eq 0 ] || [ ! -f "${files[0]}" ]; then
-        echo ""
-        return 1
-    elif [ ${#files[@]} -gt 1 ]; then
-        warning "Multiple planet files found, using the most recent one"
-        # Sort by modification time and get the newest
-        local newest=$(ls -t $pattern 2>/dev/null | head -n1)
-        echo "$newest"
-    else
-        echo "${files[0]}"
-    fi
-}
-find_extract_file() {
-    local pattern="${OSM_DATA_DIR}/data_ik_*.osm.pbf"
-    local files=( $pattern )  # This expands the glob
-    
-    if [ ${#files[@]} -eq 0 ] || [ ! -f "${files[0]}" ]; then
-        echo ""
-        return 1
-    elif [ ${#files[@]} -gt 1 ]; then
-        warning "Multiple planet files found, using the most recent one"
-        # Sort by modification time and get the newest
-        local newest=$(ls -t $pattern 2>/dev/null | head -n1)
-        echo "$newest"
-    else
-        echo "${files[0]}"
-    fi
-}
 
-get_file_timestamp() {
-    local file_path="$1"
-    if [ -f "${file_path}" ]; then
-        date -r "${file_path}" +"%d%m%Y"
-    else
-        echo ""
-    fi
-}
 
 # Redirect all entrypoint output to the init log
 exec 1> >(tee -a "${INIT_LOG}")
@@ -94,7 +54,7 @@ echo "###########################"
 echo "# Container folders preparation #"
 echo "###########################"
 
-# Make sure RUNTIME_DIR is a directory
+# Make sure RUNTIME_DIR is a directory  
 if [ ! -d "${RUNTIME_DIR}" ]; then
     critical "RUNTIME_DIR: ${RUNTIME_DIR} doesn't exist. Exiting."
 elif [ ! -w "${RUNTIME_DIR}" ]; then
@@ -106,81 +66,71 @@ fi
 success "RUNTIME_DIR: ${RUNTIME_DIR} exists and is writable."
 
 mkdir -p "${RUNTIME_DIR}"/{graphs,config} || warning "Could not create the default folders in ${RUNTIME_DIR}: graphs, config"
+mkdir -p "${LOGS_DIR}" || warning "Could not create the logs folder at ${LOGS_DIR}"
+mkdir -p "${BUILD_DIR}" || warning "Could not create the builds folder at ${BUILD_DIR}"
 debug "Populated RUNTIME_DIR=${RUNTIME_DIR} with the default folders: graphs, config"
 
-# Find the OSM file using improved glob handling
-OSM_FILE=$(find_osm_file)
-if [ -z "$OSM_FILE" ]; then
-    info "No OSM file found matching pattern: ${OSM_DATA_DIR}/planet_*.osm.pbf"
-else
-    info "Found OSM file: $OSM_FILE"
-fi
 
-# Compare timestamps of the existing OSM file and the current date, download if the file is older than 5 days or if it doesn't exist
+# Find the OSM file using glob handling
+rm -f "${OSM_UPDATE_MARKER}" 2>/dev/null
+
+# Find the OSM file using glob handling
+OSM_FILE=$(find_osm_file)
+echo "Found OSM file: ${OSM_FILE}"
 if [ -z "$OSM_FILE" ] || [ ! -f "$OSM_FILE" ]; then 
     warning "PBF file not found, proceeding to download it."
-    ./downloader.sh "$@"
+    OSM_FILE="${OSM_DATA_DIR}/planet_${INIT_TIMESTAMP}.osm.pbf"
+    if wget --progress=bar:force:noscroll -O "${OSM_FILE}" "${OSM_URL}"; then
+        # Create marker file after successful download
+        touch "${OSM_UPDATE_MARKER}"
+        success "OSM data downloaded and marked as ready"
+    else
+        error "Failed to download OSM data"
+        exit 1
+    fi
     # Re-find the file after download
     OSM_FILE=$(find_osm_file)
 else
-    FILE_TIMESTAMP=$(get_file_timestamp "$OSM_FILE")
-    CURRENT_TIMESTAMP=$(date +"%d%m%Y")
-    
-    if [ "$FILE_TIMESTAMP" != "$CURRENT_TIMESTAMP" ]; then
-        # Convert timestamps to seconds for day difference calculation
-        FILE_DATE="${FILE_TIMESTAMP:4:4}-${FILE_TIMESTAMP:2:2}-${FILE_TIMESTAMP:0:2}"
-        CURRENT_DATE=$(date +"%Y-%m-%d")
-        
-        FILE_SECONDS=$(date -d "$FILE_DATE" +%s 2>/dev/null)
-        CURRENT_SECONDS=$(date -d "$CURRENT_DATE" +%s)
-        
-        # Check if date conversion was successful
-        if [ -z "$FILE_SECONDS" ]; then
-            warning "Could not parse file timestamp: $FILE_TIMESTAMP"
-            ./downloader.sh "$@"
-            OSM_FILE=$(find_osm_file)
-        else
-            DIFF_DAYS=$(( (CURRENT_SECONDS - FILE_SECONDS) / 86400 )) # 86400 seconds in a day
-            
-            if [ $DIFF_DAYS -gt 5 ]; then
-                warning "File is $DIFF_DAYS days old, proceeding with download."
-                ./downloader.sh "$@"
-                OSM_FILE=$(find_osm_file)
-            else
-                info "File is only $DIFF_DAYS days old, using existing file."
-            fi
-        fi
+    info "OSM file already exists: $OSM_FILE, proceeding to update it with diff files"
+    if pyosmium-up-to-date -vvvv --size 10000 "${OSM_FILE}"; then
+        mv "${OSM_FILE}" "${OSM_DATA_DIR}/planet_${INIT_TIMESTAMP}.osm.pbf"
+        # Create marker file after successful update
+        touch "${OSM_UPDATE_MARKER}"
+        success "OSM data updated and marked as ready"
     else
-        info "File is from today, using existing file: $OSM_FILE"
+        error "Failed to update OSM data"
+        exit 1
     fi
 fi
 
-# Get the timestamp for the IK file
-PLANET_TIMESTAMP=$(get_file_timestamp "$OSM_FILE")
-OSM_IK_FILE="${OSM_DATA_DIR}/data_ik_${PLANET_TIMESTAMP}.osm.pbf"
-
-# Extract france and spain from the OSM file if the OSM file is newer than the extracted file or if the extracted file doesn't exist
-if [ ! -f "$OSM_IK_FILE" ]; then
-    warning "Extracted file not found, proceeding to extract it."
-    ./extractor.sh poly "$OSM_IK_FILE"
-    OSM_IK_FILE="${OSM_DATA_DIR}/data_ik_*.osm.pbf"
-else 
-    info "Extracted file already exists: $OSM_IK_FILE"
-    OSM_IK_FILE=$(find_extract_file)
-
+OSM_IK_FILE="${OSM_DATA_DIR}/data_ik_${INIT_TIMESTAMP}.osm.pbf"
+if [ -f "${OSM_UPDATE_MARKER}" ]; then
+    info "OSM data is ready, proceeding with extraction..."
+    if ./extractor.sh "$OSM_IK_FILE"; then
+        success "Extraction completed"
+    else
+        error "Extraction failed"
+        exit 1
+    fi
+else
+    error "OSM data is not ready (marker file missing)"
+    exit 1
 fi
+
 
 # Check if the original jar file exists
 if [ ! -f "${jar_file}" ]; then
     critical "Jar file not found. This shouldn't happen. Exiting."
 fi
-
-
 CONFIG_FILE="/ors-config.yml"
 echo "Using configuration file: ${CONFIG_FILE}"
 
 yq -i e ".ors.engine.profiles.driving-car.build.source_file = \"${OSM_IK_FILE}\"" "${CONFIG_FILE}"
 yq -i e ".ors.engine.profile_default.build.source_file = \"${OSM_IK_FILE}\"" "${CONFIG_FILE}"
+if ! yq -i e '.ors.engine.profiles.driving-car.graph_path = "/efs/ors-build/graphs"' "${CONFIG_FILE}"; then
+    error "Failed to update driving-car graph path in config"
+    exit 1
+fi
 update_file "${RUNTIME_DIR}/config/ors-config.yml" "/ors-config.yml"
 
 
@@ -264,7 +214,7 @@ success "CATALINA_OPTS and JAVA_OPTS ready. For details set CONTAINER_LOG_LEVEL=
 info "Setting up graph update cronjob"
     
 # Create cron job (runs every 10 minutes by default)
-CRON_SCHEDULE="${GRAPH_UPDATE_CRON:-* * * * *}"
+CRON_SCHEDULE="${GRAPH_UPDATE_CRON:-0 18 * * 5}"
 echo "${CRON_SCHEDULE} /updater.sh >> /var/log/updater.log 2>&1" | crontab -
 
 # Start cron daemon
@@ -284,3 +234,17 @@ export ORS_CONFIG_LOCATION=${ors_config_location}
 
 # shellcheck disable=SC2086 # we need word splitting here
 exec java ${JAVA_OPTS} ${CATALINA_OPTS} -jar "${jar_file}" "$@"
+rm -f "${OSM_UPDATE_MARKER}"
+mv "${BUILD_DIR}/graphs/"* "${RUNTIME_DIR}/graphs/" || {
+    error "Failed to move built graphs to runtime directory"
+    exit 1
+}
+rm -rf "${BUILD_DIR}/graphs" || {
+    warning "Failed to clean up build graphs directory"
+}
+
+#clean old entrypoint logs
+
+find "${LOGS_DIR}" -name "init-ors_*.log" -type f -mtime +7 -exec rm -f {} \; || warning "Failed to clean up old entrypoint logs"
+success "ORS application started successfully. Logs are being written to ${LOGS_DIR}."
+

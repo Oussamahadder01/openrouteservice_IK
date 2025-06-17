@@ -1,4 +1,4 @@
-#!/bin/bash -ex
+#!/bin/bash
 source /utils.sh
 
 # Configuration
@@ -8,51 +8,6 @@ export OSM_DATA_DIR="/efs/data"
 export LOGS_DIR="/efs/logs/ors_ik"  
 export BUILD_DIR="/efs/ors-build"
 export RUNTIME_DIR="/efs/ors-run"
-
-
-# Function to find the planet file using glob pattern
-find_planet_file() {
-    local pattern="${OSM_DATA_DIR}/planet*.osm.pbf"
-    local files=( $pattern )  # This expands the glob
-    
-    if [ ${#files[@]} -eq 0 ] || [ ! -f "${files[0]}" ]; then
-        echo ""
-        return 1
-    elif [ ${#files[@]} -gt 1 ]; then
-        # Sort by modification time and get the newest
-        local newest=$(ls -t $pattern 2>/dev/null | head -n1)
-        echo "$newest"
-    else
-        echo "${files[0]}"
-    fi
-}
-
-# Function to find the latest extracted file
-find_latest_extracted_file() {
-    local pattern="${OSM_DATA_DIR}/data_ik_*.osm.pbf"
-    local files=( $pattern )
-    
-    if [ ${#files[@]} -eq 0 ] || [ ! -f "${files[0]}" ]; then
-        echo ""
-        return 1
-    elif [ ${#files[@]} -gt 1 ]; then
-        # Sort by modification time and get the newest
-        local newest=$(ls -t $pattern 2>/dev/null | head -n1)
-        echo "$newest"
-    else
-        echo "${files[0]}"
-    fi
-}
-
-# Function to get file timestamp (modification date in DDMMYYYY format)
-get_file_timestamp() {
-    local file_path="$1"
-    if [ -f "${file_path}" ]; then
-        date -r "${file_path}" +"%d%m%Y"
-    else
-        echo ""
-    fi
-}
 
 # Lock file to prevent multiple instances
 LOCK_FILE="/tmp/updater.lock"
@@ -112,10 +67,10 @@ set -E  # Inherit ERR trap in functions and subshells
 mkdir -p "${LOGS_DIR}" || warning "Could not create logs directory in ${LOGS_DIR}"
 
 # Find the planet file
-PLANET_FILE=$(find_planet_file)
+PLANET_FILE=$(find_osm_file)
 if [ -z "$PLANET_FILE" ]; then
     error "No planet file found matching pattern: $PLANET_FILE"
-    exit 1  # cleanup will be called by trap
+    exec /entrypoint.sh
 fi
 info "Found planet file: $PLANET_FILE"
 
@@ -123,6 +78,14 @@ info "Found planet file: $PLANET_FILE"
 PLANET_TIMESTAMP=$(get_file_timestamp "${PLANET_FILE}")
 GENERAL_LOG="${LOGS_DIR}/update-ors_${PLANET_TIMESTAMP}.log"
 ORS_LOG="${LOGS_DIR}/build-ors_${PLANET_TIMESTAMP}.log"
+CURRENT_TIMESTAMP=$(date +"%d%m%Y")
+OSM_IK_FILE="${OSM_DATA_DIR}/data_ik_${CURRENT_TIMESTAMP}.osm.pbf"
+LATEST_EXTRACTED_FILE=$(find_extract_file)
+if [ -n "${LATEST_EXTRACTED_FILE}" ]; then
+    info "Latest extracted file: ${LATEST_EXTRACTED_FILE}"
+else
+    info "No previous extracted file found"
+fi
 
 # Redirect all script output to general log
 exec 1> >(tee -a "${GENERAL_LOG}")
@@ -157,54 +120,33 @@ mkdir -p "${BUILD_DIR}"/{graphs,config} || {
     exit 1
 }
 
-# Find latest extracted file
-LATEST_EXTRACTED_FILE=$(find_latest_extracted_file)
-export OSM_IK_FILE="${OSM_DATA_DIR}/data_ik_${PLANET_TIMESTAMP}.osm.pbf"
-
-if [ -n "${LATEST_EXTRACTED_FILE}" ]; then
-    EXTRACTED_TIMESTAMP=$(get_file_timestamp "${LATEST_EXTRACTED_FILE}")
-    info "Latest extracted file: ${LATEST_EXTRACTED_FILE}"
-    info "Extracted file timestamp: ${EXTRACTED_TIMESTAMP}"
-else
-    info "No extracted file found"
-    EXTRACTED_TIMESTAMP=""
-fi
-
-# Determine if we need to extract
-NEED_EXTRACTION=false
-
-if [ -z "${LATEST_EXTRACTED_FILE}" ]; then
-    info "No extracted file found, extraction needed"
-    NEED_EXTRACTION=true
-elif [ "${PLANET_TIMESTAMP}" != "${EXTRACTED_TIMESTAMP}" ]; then
-    info "Planet file timestamp (${PLANET_TIMESTAMP}) differs from extracted file timestamp (${EXTRACTED_TIMESTAMP})"
-    NEED_EXTRACTION=true
-else
-    info "Extracted file is up to date, skipping extraction"
-fi
-
 # Run extraction if needed
-if [ "${NEED_EXTRACTION}" = true ]; then
-    info "Starting extraction process"
-    
-    # Run the extractor
-    if ! /extractor.sh poly "$OSM_IK_FILE"; then
-        error "Extraction failed"
-        exit 1
-    fi
-    
-    success "Extraction completed. New file: ${OSM_IK_FILE}"
-    
-    # Remove old extracted files if they exist and are different
-    if [ -n "${LATEST_EXTRACTED_FILE}" ] && [ "${LATEST_EXTRACTED_FILE}" != "${OSM_IK_FILE}" ]; then
-        rm -f "${LATEST_EXTRACTED_FILE}" || {
-            warning "Failed to remove old extracted file: ${LATEST_EXTRACTED_FILE}"
-        }
-        info "Removed old extracted file: ${LATEST_EXTRACTED_FILE}"
-    fi
+echo "======================================"
+info "Starting extraction process"
+echo "======================================"
+
+#update the osm.pbf file and run extraction  
+pyosmium-up-to-date -vvvv --size 10000 ${PLANET_FILE} && mv ${PLANET_FILE} "${OSM_DATA_DIR}/planet_${CURRENT_TIMESTAMP}.osm.pbf"|| {
+    error "Failed to update OSM data"
+    exit 1
+}
+if ! /extractor.sh "$OSM_IK_FILE"; then
+    error "Extraction failed"
+    exit 1
+fi
+success "Extraction completed. New file: ${OSM_IK_FILE}"
+
+
+
+#remove old extracted files if they exist and are different
+if [ -n "${LATEST_EXTRACTED_FILE}" ] && [ "${LATEST_EXTRACTED_FILE}" != "${OSM_IK_FILE}" ]; then
+    rm -f "${LATEST_EXTRACTED_FILE}" || {
+        warning "Failed to remove old extracted file: ${LATEST_EXTRACTED_FILE}"
+    }
+    info "Removed old extracted file: ${LATEST_EXTRACTED_FILE}"
 fi
 
-# Copy current config to build directory
+#copy current config to build directory
 cp -r "${RUNTIME_DIR}/config/"* "${BUILD_DIR}/config/" 2>/dev/null || {
     error "Failed to copy config files"
     exit 1
@@ -219,23 +161,19 @@ if [ ! -f "${CONFIG_FILE}" ]; then
     exit 1
 fi
 
-# Update source file path
-LATEST_EXTRACTED_FILE=$(find_latest_extracted_file)
-yq -i e ".ors.engine.profiles.driving-car.build.source_file = \"${LATEST_EXTRACTED_FILE}\"" "${CONFIG_FILE}" || {
+yq -i e ".ors.engine.profiles.driving-car.build.source_file = \"${OSM_IK_FILE}\"" "${CONFIG_FILE}" || {
     error "Failed to update source file in config"
     exit 1
 }
-yq -i e ".ors.engine.profile_default.build.source_file = \"${LATEST_EXTRACTED_FILE}\"" "${CONFIG_FILE}" || {
+yq -i e ".ors.engine.profile_default.build.source_file = \"${OSM_IK_FILE}\"" "${CONFIG_FILE}" || {
     error "Failed to update source file in config"
     exit 1
 }
-# Update graph path
 if ! yq -i e '.ors.engine.profiles.driving-car.graph_path = "/efs/ors-build/graphs"' "${CONFIG_FILE}"; then
     error "Failed to update driving-car graph path in config"
     exit 1
 fi
-
-success "Configuration updated"
+success "Configuration updated !!"
 
 # Build graphs with forced rebuild
 info "Building new graphs in ${BUILD_DIR} using file: ${OSM_IK_FILE}"
@@ -384,13 +322,8 @@ wait ${BUILD_PID} 2>/dev/null || true
 # Replace runtime graphs with new ones
 info "Replacing runtime graphs with newly built ones"
 mkdir -p "${RUNTIME_DIR}/graphs"
-cp -r "${BUILD_DIR}/graphs/"* "${RUNTIME_DIR}/graphs/" || {
-    error "Failed to copy new graphs to runtime directory"
-    # Try to restore backup if copy failed
-    if [ -d "${BACKUP_DIR}" ]; then
-        mv "${BACKUP_DIR}" "${RUNTIME_DIR}/graphs"
-        error "Restored backup graphs"
-    fi
+mv "${BUILD_DIR}/graphs/"* "${RUNTIME_DIR}/graphs/" || {
+    error "Failed to move built graphs to runtime directory"
     exit 1
 }
 
@@ -399,14 +332,9 @@ rm -rf "${BUILD_DIR}/graphs" || {
     warning "Failed to clean up build graphs directory"
 }
 
-# Remove old backups (keep only last 3)
-if [ -d "${RUNTIME_DIR}" ]; then
-    find "${RUNTIME_DIR}" -maxdepth 1 -name "graphs_backup_*" -type d | sort -r | tail -n +4 | xargs rm -rf 2>/dev/null || true
-fi
-
 success "Graph update completed successfully"
-success "Logs saved to:"
-success "  - General logs: ${GENERAL_LOG}"
-success "  - ORS logs: ${ORS_LOG}"
+# clean old updater logs 
+find "${LOGS_DIR}" -name "update-ors_*.log" -type f -mtime +7 -exec rm -f {} \; || warning "Failed to clean up old updater logs"
+find "${LOGS_DIR}" -name "build-ors_*.log" -type f -mtime +7 -exec rm -f {} \; || warning "Failed to clean up old build logs"
 
 exit 0

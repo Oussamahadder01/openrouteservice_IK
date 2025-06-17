@@ -7,6 +7,8 @@ CONTAINER_LOG_LEVEL=${CONTAINER_LOG_LEVEL:-"INFO"}
 #common environment variables, write it here to include it in the cron job
 OSM_DATA_DIR=/efs/data 
 LOG_DIR="/efs/logs/ors_ik"
+export OSM_UPDATE_MARKER="${OSM_DATA_DIR}/.osm_data_ready"
+
 
 #extraction variables
 BBOX=${BBOX:-"-10.03529,36.26156,8.195,51.14464"}  # France + Spain bounding box
@@ -176,12 +178,12 @@ setup_cronjob() {
     echo "${CRON_SCHEDULE} /updater.sh >> /var/log/updater.log 2>&1" | crontab -
     
     # Start cron daemon
-    cron
+    cronx
     success "Cronjob configured to run: ${CRON_SCHEDULE}"
 }
 
 find_osm_file() {
-    local pattern="${OSM_DATA_DIR}/planet_*.osm.pbf"
+    local pattern="${OSM_DATA_DIR}/planet_*"
     local files=( $pattern )  # This expands the glob
     
     if [ ${#files[@]} -eq 0 ] || [ ! -f "${files[0]}" ]; then
@@ -197,7 +199,7 @@ find_osm_file() {
     fi
 }
 find_extract_file() {
-    local pattern="${OSM_DATA_DIR}/data_ik_*.osm.pbf"
+    local pattern="${OSM_DATA_DIR}/data_ik_*"
     local files=( $pattern )  # This expands the glob
     
     if [ ${#files[@]} -eq 0 ] || [ ! -f "${files[0]}" ]; then
@@ -212,4 +214,14 @@ find_extract_file() {
         echo "${files[0]}"
     fi
 }
+
+get_file_timestamp() {
+    local file_path="$1"
+    if [ -f "${file_path}" ]; then
+        date -r "${file_path}" +"%d%m%Y"
+    else
+        echo ""
+    fi
+}
+
 set_log_level

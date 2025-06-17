@@ -52,6 +52,7 @@ RUN apt-get update && apt-get install -y \
     openssl \
     wget \
     osmium-tool \
+    pyosmium \
     openjdk-21-jre-headless \
     util-linux \
     && rm -rf /var/lib/apt/lists/* && \
@@ -72,7 +73,7 @@ COPY --chown=ors:ors ./downloader.sh /downloader.sh
 COPY --chown=ors:ors ./utils.sh /utils.sh
 COPY --chown=ors:ors --from=build-go /go/bin/yq /bin/yq
 COPY --chown=ors:ors ./ors-config.yml /ors-config.yml
-COPY --chown=ors:ors ./polygon/polygon_fr_esp.geojson /polygon_fr_esp.geojson
+COPY --chown=ors:ors ./polygon/polygon_fr_esp.poly /polygon_fr_esp.poly
 COPY --chown=ors:ors ./updater.sh /updater.sh
 COPY --chown=ors:ors ./extractor.sh /extractor.sh
 
