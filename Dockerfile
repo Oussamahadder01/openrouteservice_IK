@@ -72,7 +72,7 @@ COPY --chown=ors:ors ./entrypoint.sh /entrypoint.sh
 COPY --chown=ors:ors ./utils.sh /utils.sh
 COPY --chown=ors:ors --from=build-go /go/bin/yq /bin/yq
 COPY --chown=ors:ors ./ors-config.yml /ors-config.yml
-COPY --chown=ors:ors ./polygon/polygon_aquitaine.poly /polygon_fr_esp.poly
+COPY --chown=ors:ors ./polygon/polygon.poly /polygon_fr_esp.poly
 COPY --chown=ors:ors ./updater.sh /updater.sh
 COPY --chown=ors:ors ./extractor.sh /extractor.sh
 
