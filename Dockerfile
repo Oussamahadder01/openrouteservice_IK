@@ -23,7 +23,7 @@ COPY ors-engine /tmp/ors/ors-engine
 RUN ./mvnw -pl 'ors-api,ors-engine' \
     -q clean package -DskipTests -Dmaven.test.skip=true
 
-FROM docker.io/golang:1.24.2-alpine3.21 AS build-go
+FROM docker.io/golang:1.24.4-alpine3.21 AS build-go
 # Setup the target system with the right user and folders.
 RUN GO111MODULE=on go install github.com/mikefarah/yq/v4@v4.45.1
 
@@ -69,11 +69,10 @@ RUN apt-get update && apt-get install -y \
 # Copy over the needed bits and pieces from the other stages.
 COPY --chown=ors:ors --from=build /tmp/ors/ors-api/target/ors.jar /ors.jar
 COPY --chown=ors:ors ./entrypoint.sh /entrypoint.sh
-COPY --chown=ors:ors ./downloader.sh /downloader.sh
 COPY --chown=ors:ors ./utils.sh /utils.sh
 COPY --chown=ors:ors --from=build-go /go/bin/yq /bin/yq
 COPY --chown=ors:ors ./ors-config.yml /ors-config.yml
-COPY --chown=ors:ors ./polygon/polygon_fr_esp.poly /polygon_fr_esp.poly
+COPY --chown=ors:ors ./polygon/polygon_aquitaine.poly /polygon_fr_esp.poly
 COPY --chown=ors:ors ./updater.sh /updater.sh
 COPY --chown=ors:ors ./extractor.sh /extractor.sh
 

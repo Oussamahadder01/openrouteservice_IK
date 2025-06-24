@@ -50,5 +50,5 @@ def geojson_to_poly(geojson_file, poly_file):
         f.write("END\n")
 
 if __name__ == "__main__":
-    geojson_to_poly('./polygon/polygon_fr_esp.geojson', './polygon/polygon_fr_esp.poly')
+    geojson_to_poly('./polygon/export.geojson', './polygon/polygon_aquitaine.poly')
     print("Conversion terminée ! Le fichier output.poly a été créé.")

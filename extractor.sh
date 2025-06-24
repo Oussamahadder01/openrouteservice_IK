@@ -2,7 +2,7 @@
 
 #########################################
 # OSM Data Extractor for France + Spain
-# Usage: ./extractor.sh [METHOD] [TARGET_FILE]
+# Usage: /extractor.sh [METHOD] [TARGET_FILE]
 # METHOD: bbox | poly (default: poly)
 #########################################
 source /utils.sh

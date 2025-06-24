@@ -106,7 +106,7 @@ fi
 OSM_IK_FILE="${OSM_DATA_DIR}/data_ik_${INIT_TIMESTAMP}.osm.pbf"
 if [ -f "${OSM_UPDATE_MARKER}" ]; then
     info "OSM data is ready, proceeding with extraction..."
-    if ./extractor.sh "$OSM_IK_FILE"; then
+    if /extractor.sh "$OSM_IK_FILE"; then
         success "Extraction completed"
     else
         error "Extraction failed"
@@ -125,15 +125,16 @@ fi
 CONFIG_FILE="/ors-config.yml"
 echo "Using configuration file: ${CONFIG_FILE}"
 
-yq -i e ".ors.engine.profiles.driving-car.build.source_file = \"${OSM_IK_FILE}\"" "${CONFIG_FILE}"
-yq -i e ".ors.engine.profile_default.build.source_file = \"${OSM_IK_FILE}\"" "${CONFIG_FILE}"
-if ! yq -i e '.ors.engine.profiles.driving-car.graph_path = "/efs/ors-build/graphs"' "${CONFIG_FILE}"; then
+
+update_file "${RUNTIME_DIR}/config/ors-config.yml" "/ors-config.yml"
+
+yq -i e ".ors.engine.profiles.driving-car.build.source_file = \"${OSM_IK_FILE}\"" "${RUNTIME_DIR}/config/ors-config.yml"
+yq -i e ".ors.engine.profile_default.build.source_file = \"${OSM_IK_FILE}\"" "${RUNTIME_DIR}/config/ors-config.yml"
+if ! yq -i e '.ors.engine.profiles.driving-car.graph_path = "/efs/ors-build/graphs"' "${RUNTIME_DIR}/config/ors-config.yml"; then
     error "Failed to update driving-car graph path in config"
     exit 1
 fi
-update_file "${RUNTIME_DIR}/config/ors-config.yml" "/ors-config.yml"
-
-
+ors_config_location="${RUNTIME_DIR}/config/ors-config.yml"
 ors_engine_profile_default_graph_path=$(extract_config_info "${ors_config_location}" '.ors.engine.profile_default.graph_path')
 ors_engine_profile_default_build_source_file=$(extract_config_info "${ors_config_location}" '.ors.engine.profile_default.build.source_file')
 

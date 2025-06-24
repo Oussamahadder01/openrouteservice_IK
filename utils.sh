@@ -111,33 +111,6 @@ extract_config_info() {
   echo "${config_value}"
 }
 
-# Initial setup function
-initial_setup() {
-    info "Performing initial setup"
-    
-    # Set up EFS directories
-    RUNTIME_DIR="/efs/ors-run"
-    mkdir -p "${RUNTIME_DIR}"/{graphs,logs,config,files,elevation_cache}
-    
-    # Check if this is first run (no graphs exist)
-    if [ ! -d "${RUNTIME_DIR}/graphs" ] || [ -z "$(ls -A "${RUNTIME_DIR}/graphs" 2>/dev/null)" ]; then
-        info "First run detected - building initial graphs"
-        
-        export ORS_HOME="${RUNTIME_DIR}"
-        
-        update_file "${RUNTIME_DIR}/config/ors-config.yml" "/ors-config.yml"
-        
-        export REBUILD_GRAPHS="true"
-        
-        success "Initial setup completed"
-        return 0
-    else
-        info "Existing graphs found, using runtime directory"
-        export ORS_HOME="${RUNTIME_DIR}"
-        return 0
-    fi
-}
-
 # Health check with retry logic
 wait_for_health() {
     local max_retries=${1:-60}
