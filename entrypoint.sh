@@ -71,7 +71,7 @@ handle_osm_data() {
         # If OSM file exists, we need to set OSM_IK_FILE
         # Extract the timestamp from existing file or use current
         local existing_timestamp
-        existing_timestamp=$(echo "$OSM_FILE" | grep -oP '\d{8}' | head -1)
+        existing_timestamp=$(echo "$OSM_FILE" | grep -oE '[0-9]{8}' | head -1)
         OSM_IK_FILE="${OSM_DATA_DIR}/data_ik_${existing_timestamp:-${INIT_TIMESTAMP}}.osm.pbf"
         
         # Check if IK file exists, if not create it

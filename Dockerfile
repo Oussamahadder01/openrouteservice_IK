@@ -28,13 +28,11 @@ FROM docker.io/golang:1.24.4-alpine3.21 AS build-go
 RUN GO111MODULE=on go install github.com/mikefarah/yq/v4@v4.45.1
 
 # build final image, just copying stuff inside
-FROM ubuntu:22.04 AS publish
+FROM docker.io/iboates/osmium:latest AS publish
 
 # Build ARGS
 ARG UID=1000
 ARG GID=1000
-ARG DEBIAN_FRONTEND=noninteractive
-
 
 ARG RUNTIME_DIR=/efs/ors-run
 ARG BUILD_DIR=/efs/ors-build
@@ -45,24 +43,24 @@ ARG OSM_DATA_DIR=/efs/data
 ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8'
 
 # Setup the target system with the right user and folders.
-RUN apt-get update && apt-get install -y \
+# Note: osmium image is likely Alpine-based, so we use apk
+RUN apk update && apk add --no-cache \
     bash \
     jq \
-    cron \
+    dcron \
     openssl \
     wget \
-    osmium-tool \
-    pyosmium \
-    openjdk-21-jre-headless \
+    openjdk21-jre-headless \
     util-linux \
-    && rm -rf /var/lib/apt/lists/* && \
+    shadow \
+    && \
     # Create group and user
-    groupadd -g ${GID} ors && \
+    addgroup -g ${GID} ors && \
     mkdir -p ${RUNTIME_DIR}/graphs  && \
     mkdir -p ${BUILD_DIR} && \
     mkdir -p ${LOGS_DIR} && \
     mkdir -p ${OSM_DATA_DIR} && \
-    useradd -d ${RUNTIME_DIR} -u ${UID} -g ors -s /bin/bash ors && \
+    adduser -D -h ${RUNTIME_DIR} -u ${UID} -G ors -s /bin/bash ors && \
     chown ors:ors ${RUNTIME_DIR} && \
     chmod -R 777 ${RUNTIME_DIR}
 
@@ -83,7 +81,6 @@ ENV LOGS_DIR=${LOGS_DIR}
 ENV OSM_DATA_DIR=${OSM_DATA_DIR}
 ENV OSM_FILE=${OSM_DATA_DIR}/planet_*
 ENV OSM_URL=https://download.geofabrik.de/europe-latest.osm.pbf
-
 
 ENV REBUILD_GRAPHS="False"
 

@@ -142,19 +142,6 @@ function cleanup() {
     fi
 }
 
-# Cronjob setup function
-setup_cronjob() {
-    info "Setting up graph update cronjob"
-    
-    # Create cron job (runs every Sunday at 2 AM)
-    CRON_SCHEDULE="${GRAPH_UPDATE_CRON:-* * * * *}"
-    echo "${CRON_SCHEDULE} /updater.sh >> /var/log/updater.log 2>&1" | crontab -
-    
-    # Start cron daemon
-    cronx
-    success "Cronjob configured to run: ${CRON_SCHEDULE}"
-}
-
 find_osm_file() {
     local pattern="${OSM_DATA_DIR}/planet_*"
     local files=( $pattern )  # This expands the glob
